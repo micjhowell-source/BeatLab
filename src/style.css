@@ -1,0 +1,234 @@
+:root {
+  --bg:       #0A0A0A;
+  --surface:  #141414;
+  --card:     #1C1C1C;
+  --border:   #2A2A2A;
+  --accent:   #E8FF3A;
+  --accent2:  #FF6B35;
+  --text:     #F0F0F0;
+  --text2:    #888888;
+  --muted:    #555555;
+  --green:    #3AFF8A;
+  --red:      #FF3A5C;
+  --blue:     #3AB4FF;
+  --purple:   #C084FC;
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-mono:    'DM Mono', monospace;
+  --font-body:    'DM Sans', sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Navigation */
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0 1.5rem;
+  height: 56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav__brand {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  color: var(--accent);
+  text-decoration: none;
+  letter-spacing: 0.05em;
+  margin-right: 0.5rem;
+}
+
+.nav__links {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.nav__link {
+  color: var(--text2);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.nav__link:hover {
+  color: var(--text);
+  background: var(--card);
+}
+
+.nav__link.active {
+  color: var(--accent);
+  background: rgba(232, 255, 58, 0.08);
+}
+
+.nav__user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.nav__email {
+  font-size: 0.8rem;
+  color: var(--text2);
+  font-family: var(--font-mono);
+}
+
+/* Page content */
+.page {
+  flex: 1;
+  padding: 2rem 1.5rem;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.page h1 {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  letter-spacing: 0.04em;
+  margin-bottom: 1rem;
+}
+
+/* Buttons */
+button,
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--accent);
+  color: #000;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.15s, transform 0.1s;
+  line-height: 1;
+}
+
+button:hover,
+.btn:hover {
+  opacity: 0.88;
+}
+
+button:active,
+.btn:active {
+  transform: scale(0.97);
+}
+
+button.secondary,
+.btn.secondary {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+button.secondary:hover,
+.btn.secondary:hover {
+  border-color: var(--muted);
+}
+
+button.danger,
+.btn.danger {
+  background: var(--red);
+  color: #fff;
+}
+
+/* Cards */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+.card:hover {
+  border-color: var(--muted);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  background: var(--surface);
+  color: var(--text2);
+  border: 1px solid var(--border);
+}
+
+.badge.green {
+  background: rgba(58, 255, 138, 0.12);
+  color: var(--green);
+  border-color: rgba(58, 255, 138, 0.25);
+}
+
+.badge.accent {
+  background: rgba(232, 255, 58, 0.12);
+  color: var(--accent);
+  border-color: rgba(232, 255, 58, 0.25);
+}
+
+.badge.orange {
+  background: rgba(255, 107, 53, 0.12);
+  color: var(--accent2);
+  border-color: rgba(255, 107, 53, 0.25);
+}
+
+.badge.red {
+  background: rgba(255, 58, 92, 0.12);
+  color: var(--red);
+  border-color: rgba(255, 58, 92, 0.25);
+}
+
+/* Utilities */
+.text-mono {
+  font-family: var(--font-mono);
+}
+
+.text-display {
+  font-family: var(--font-display);
+}
+
+.text-muted {
+  color: var(--text2);
+}
