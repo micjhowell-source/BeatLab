@@ -2,7 +2,7 @@ import { supabase } from '../supabase.js'
 import { renderGraph, computeUnlocks } from '../components/graph.js'
 import { createRecorderUI } from '../components/recorder-ui.js'
 import { renderFeedback } from '../components/feedback.js'
-import { extractFeatures, extractRawFeatures } from '../audio/analyser.js'
+import { extractFeatures } from '../audio/analyser.js'
 import { scoreFull } from '../audio/similarity.js'
 import { playDemo } from '../audio/synth.js'
 
@@ -285,13 +285,11 @@ async function renderLesson(main, soundSlug) {
 
         let scores
         try {
-          const [attemptVec, attemptRaw] = await Promise.all([
-            extractFeatures(audioBuffer),
-            extractRawFeatures(audioBuffer),
-          ])
+          const attemptVec = await extractFeatures(audioBuffer)
+          const attemptRaw = attemptVec   // same vector; sub-scores use indices 13-16
 
           const refVecs = refClips.map(c => c.feature_vector).filter(Boolean)
-          const refRaws = refClips.map(c => c.feature_vector).filter(Boolean) // raw not stored; use normalised as fallback
+          const refRaws = refVecs         // same stored vectors used for sub-score comparisons
 
           if (refVecs.length === 0) {
             feedbackSection.innerHTML = '<div class="card"><p class="text-muted">No feature vectors on reference clips yet.</p></div>'

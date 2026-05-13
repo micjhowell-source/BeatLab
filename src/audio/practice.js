@@ -69,10 +69,12 @@ export async function scoreHits(audioBuffer, hits, steps, referenceMap) {
 
     try {
       const vec = await extractFeatures(slicedBuffer)
-      const similarities = refs.map(r => cosineSimilarity(vec, r))
+      const mfcc = v => Array.from(v).slice(0, 13)
+      const similarities = refs.map(r => cosineSimilarity(mfcc(vec), mfcc(r)))
       const topN = Math.max(1, Math.ceil(similarities.length * 0.6))
       const sorted = [...similarities].sort((a, b) => b - a)
-      soundScore = Math.round(sorted.slice(0, topN).reduce((a, b) => a + b, 0) / topN * 100)
+      const mean = sorted.slice(0, topN).reduce((a, b) => a + b, 0) / topN
+      soundScore = Math.round(Math.max(0, Math.min(100, ((mean + 1) / 2) * 100)))
     } catch {
       soundScore = 0
     }

@@ -60,20 +60,18 @@ function zScoreNormalise(vec) {
   return out
 }
 
-// Returns a z-score normalised Float32Array[17] feature vector
+// Returns the raw mean feature vector as Float32Array[17].
+// We do NOT z-score normalise here — cosine similarity handles scale invariance,
+// and z-scoring a mixed-scale vector (MFCCs + centroid in Hz + RMS) produces
+// near-zero similarities even for matching sounds.
 export async function extractFeatures(audioBuffer) {
-  const frames = sliceIntoFrames(audioBuffer, WINDOW_SIZE, HOP_SIZE)
-  const frameVectors = frames.map(extractFrameFeatures)
-  const mean = averageFrameFeatures(frameVectors)
-  return zScoreNormalise(mean)
-}
-
-// Returns the raw (unnormalised) mean vector — used for sub-score comparisons
-export async function extractRawFeatures(audioBuffer) {
   const frames = sliceIntoFrames(audioBuffer, WINDOW_SIZE, HOP_SIZE)
   const frameVectors = frames.map(extractFrameFeatures)
   return averageFrameFeatures(frameVectors)
 }
+
+// Alias kept for call-sites that import extractRawFeatures
+export const extractRawFeatures = extractFeatures
 
 // ─── Onset detection ───────────────────────────────────────────────────────
 

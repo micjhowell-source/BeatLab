@@ -16,14 +16,20 @@ export function cosineSimilarity(vecA, vecB) {
   return denom === 0 ? 0 : dot / denom
 }
 
-// Mean of top 60% of similarity scores against a reference set — 0–100
+// Mean of top 60% of similarity scores against a reference set — 0–100.
+// Only compares the 13 MFCC dimensions (indices 0-12) — they are all cepstral
+// coefficients on comparable scales, so cosine similarity is meaningful.
+// The spectral/RMS features (indices 13-16) are reserved for sub-scores only.
+// Result is mapped from [-1,1] → [0,100] and clamped so we never show negatives.
 export function aggregateSimilarity(attemptVector, referenceVectors) {
+  const mfcc = v => Array.from(v).slice(0, 13)
   const scores = referenceVectors
-    .map(ref => cosineSimilarity(attemptVector, ref))
+    .map(ref => cosineSimilarity(mfcc(attemptVector), mfcc(ref)))
     .sort((a, b) => b - a)
   const topN = Math.max(1, Math.ceil(scores.length * 0.6))
   const mean = scores.slice(0, topN).reduce((a, b) => a + b, 0) / topN
-  return Math.round(mean * 100)
+  // Map [-1, 1] → [0, 100]
+  return Math.round(Math.max(0, Math.min(100, ((mean + 1) / 2) * 100)))
 }
 
 // ─── Sub-score helpers ──────────────────────────────────────────────────────
