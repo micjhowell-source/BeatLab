@@ -1,5 +1,6 @@
 import { supabase } from '../supabase.js'
 import { createSequenceEditor, createChipPalette } from '../components/sequence-editor.js'
+import { createPracticeUI, loadReferenceMap } from '../components/practice-ui.js'
 
 export async function render(params) {
   const main = document.querySelector('.main-content')
@@ -14,6 +15,7 @@ export async function render(params) {
             <p class="page-subtitle">Build sequences with Standard Beatbox Notation and practise them.</p>
           </div>
           <div id="editor-mount"></div>
+          <div id="practice-mount"></div>
           <div id="chip-mount" class="chip-palette-section">
             <h3 class="section-label">Sound Library — click to insert at cursor</h3>
           </div>
@@ -51,6 +53,57 @@ export async function render(params) {
     })
 
     if (opts.title) editorInstance.setTitle(opts.title)
+
+    mountPracticeButton(opts)
+  }
+
+  // ── Mount practice section ──
+  function mountPracticeButton(opts = {}) {
+    const mount = main.querySelector('#practice-mount')
+    mount.innerHTML = ''
+
+    const wrapper = document.createElement('div')
+    wrapper.className = 'practice-launch-wrap'
+    wrapper.innerHTML = `
+      <button class="practice-launch-btn secondary" id="btn-practice">
+        🥁 Practice this sequence
+      </button>
+      <div id="practice-panel-mount"></div>
+    `
+    mount.appendChild(wrapper)
+
+    wrapper.querySelector('#btn-practice').addEventListener('click', async () => {
+      const btnEl = wrapper.querySelector('#btn-practice')
+      const panelMount = wrapper.querySelector('#practice-panel-mount')
+
+      // Toggle: if panel already open, hide it
+      if (panelMount.children.length > 0) {
+        panelMount.innerHTML = ''
+        btnEl.textContent = '🥁 Practice this sequence'
+        return
+      }
+
+      btnEl.disabled = true
+      btnEl.textContent = 'Loading references…'
+
+      const state = editorInstance?.getState() || {}
+      const notation  = state.notation  || opts.notation  || 'b - t - b - t -'
+      const bpm       = state.bpm       || opts.bpm       || 90
+      const stepCount = state.stepCount || opts.stepCount || 16
+
+      const refMap = await loadReferenceMap(notation)
+
+      panelMount.innerHTML = ''
+      createPracticeUI(panelMount, {
+        id:        currentSequenceId,
+        notation,
+        bpm,
+        stepCount,
+      }, refMap)
+
+      btnEl.disabled = false
+      btnEl.textContent = '✕ Close practice'
+    })
   }
 
   // ── Chip palette ──

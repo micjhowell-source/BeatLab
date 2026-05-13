@@ -1418,6 +1418,253 @@ button.danger,
   color: var(--text2);
 }
 
+/* ── Practice launch ─────────────────────────────────────────────── */
+.practice-launch-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.practice-launch-btn {
+  align-self: flex-start;
+  font-size: 0.9rem;
+}
+
+/* ── Practice UI ─────────────────────────────────────────────────── */
+.practice-ui {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.practice-header h3 {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+  margin-bottom: 0.3rem;
+}
+
+.practice-desc {
+  font-size: 0.85rem;
+}
+
+.practice-phase {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 0;
+  text-align: center;
+}
+
+.practice-phase[hidden] {
+  display: none;
+}
+
+.practice-btn-start {
+  font-size: 1rem;
+  padding: 0.65rem 1.75rem;
+}
+
+/* Listen phase */
+.practice-phase-label {
+  font-size: 0.85rem;
+  color: var(--text2);
+  font-family: var(--font-mono);
+}
+
+.recording-label {
+  color: var(--accent2);
+  animation: blink-label 1.2s infinite;
+}
+
+@keyframes blink-label {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.practice-progress-bar {
+  width: 100%;
+  max-width: 400px;
+  height: 6px;
+  background: var(--surface);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.practice-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  width: 0;
+  transition: width 0.1s linear;
+}
+
+/* Countdown */
+.practice-countdown {
+  font-family: var(--font-display);
+  font-size: 6rem;
+  line-height: 1;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+}
+
+.practice-countdown.pop {
+  animation: countdown-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes countdown-pop {
+  0%   { transform: scale(0.4); opacity: 0.3; }
+  100% { transform: scale(1);   opacity: 1;   }
+}
+
+/* Record phase */
+.practice-waveform {
+  width: 100%;
+  max-width: 600px;
+  display: block;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.practice-loop-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text2);
+}
+
+/* ── Results ─────────────────────────────────────────────────────── */
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.result-score-big {
+  font-family: var(--font-display);
+  font-size: 4.5rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.result-score-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.result-label {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.result-sub-scores {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+  color: var(--text2);
+  font-family: var(--font-mono);
+}
+
+.result-sub-scores b {
+  color: var(--text);
+}
+
+/* Timeline */
+.result-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.result-timeline-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+
+.result-step-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.result-cell {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--result-color, var(--muted)) 18%, var(--card));
+  border: 1.5px solid color-mix(in srgb, var(--result-color, var(--muted)) 45%, var(--border));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: default;
+  title: attr(title);
+}
+
+.result-cell--rest {
+  opacity: 0.25;
+  --result-color: var(--muted);
+}
+
+.result-cell--missed {
+  opacity: 0.6;
+}
+
+.result-cell-sym {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--result-color, var(--text2));
+  line-height: 1;
+}
+
+.result-cell-score {
+  font-size: 0.58rem;
+  font-family: var(--font-mono);
+  color: var(--text2);
+  line-height: 1;
+}
+
+.result-cell-miss {
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  font-size: 0.55rem;
+  color: var(--red);
+}
+
+/* Legend */
+.result-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.legend-item {
+  font-size: 0.72rem;
+  color: var(--lc);
+  font-family: var(--font-mono);
+}
+
+.result-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 /* ── Mobile ──────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .page {
