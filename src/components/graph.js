@@ -42,7 +42,7 @@ function computePositions(nodes, edges) {
   for (const [, ids] of byLayer) maxCount = Math.max(maxCount, ids.length)
 
   const totalWidth = Math.max(maxCount * H_SEP + H_SEP, 560)
-  const maxLayer = Math.max(...layers.values())
+  const maxLayer = layers.size > 0 ? Math.max(...layers.values()) : 0
   const totalHeight = (maxLayer + 1) * LAYER_H + NODE_R * 2 + SVG_PAD * 2
 
   const positions = new Map()
@@ -118,6 +118,13 @@ export function renderGraph(container, {
   onRemoveConnection,
 }) {
   container.innerHTML = ''
+
+  if (!sounds || sounds.length === 0) {
+    container.innerHTML = `<p class="text-muted" style="padding:2rem 0;font-family:var(--font-mono);font-size:0.85rem;">
+      Could not load skill graph — check your Supabase connection and that the migrations have been run.
+    </p>`
+    return
+  }
 
   const progressMap = new Map(userProgress.map(p => [p.sound_id, p]))
   const goalSet = new Set(userGoals.map(g => g.sound_id))
