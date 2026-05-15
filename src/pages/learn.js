@@ -372,7 +372,7 @@ async function renderLesson(main, soundSlug) {
   main.querySelector('#btn-banner-signin')?.addEventListener('click', () => {
     const email = prompt('Enter your email address:')
     if (!email) return
-    supabase.auth.signInWithOtp({ email })
+    supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } })
       .then(({ error }) => {
         if (error) alert('Error: ' + error.message)
         else alert('Check your email for a magic link!')

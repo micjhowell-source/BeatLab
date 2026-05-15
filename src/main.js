@@ -63,7 +63,7 @@ function updateNavUser(user) {
     document.getElementById('btn-signin')?.addEventListener('click', () => {
       const email = prompt('Enter your email address:')
       if (!email) return
-      supabase.auth.signInWithOtp({ email })
+      supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } })
         .then(({ error }) => {
           if (error) alert('Sign-in error: ' + error.message)
           else alert('Check your email for a magic link!')
