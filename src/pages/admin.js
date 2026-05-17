@@ -1,40 +1,19 @@
-import { supabase } from '../supabase.js'
+import * as db from '../lib/db.js'
 import { createUploadWidget } from '../components/upload.js'
 import { playDemo } from '../audio/synth.js'
 
 const CATEGORY_ORDER = ['kick', 'hat', 'snare', 'bass', 'fx']
 const CATEGORY_LABEL = { kick: 'Kick', hat: 'Hi-Hat', snare: 'Snare', bass: 'Bass', fx: 'FX' }
 
-export async function render(params) {
-  const app  = document.getElementById('app')
-  const main = app.querySelector('.main-content')
+export async function render() {
+  const main = document.querySelector('.main-content')
   if (!main) return
-
-  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL
-  const { data: { user } } = await supabase.auth.getUser()
-  const isAdmin = user && adminEmail && user.email === adminEmail
-
-  if (!isAdmin) {
-    main.innerHTML = `
-      <div class="page">
-        <h1>Admin</h1>
-        <div class="card" style="max-width:420px;margin-top:1.5rem;">
-          <p style="color:var(--red);font-weight:600;">Access denied.</p>
-          <p class="text-muted" style="margin-top:0.5rem;font-size:0.875rem;">
-            ${user ? `Signed in as ${user.email} — not an admin account.` : 'Sign in as the admin account to access this area.'}
-          </p>
-        </div>
-      </div>
-    `
-    return
-  }
 
   main.innerHTML = `
     <div class="page admin-page">
       <div class="page-header">
         <h1>Admin</h1>
         <p class="page-subtitle">Manage reference clips for each sound. Aim for 3–8 clips per sound.</p>
-        <p class="admin-user-badge">Signed in as <span class="text-mono">${user.email}</span></p>
       </div>
       <div id="admin-sounds-list" class="admin-sounds-list">
         <div class="loading-spinner">Loading sounds…</div>
@@ -42,17 +21,20 @@ export async function render(params) {
     </div>
   `
 
-  const [soundsRes, clipsRes] = await Promise.all([
-    supabase.from('sounds').select('*').order('category').order('name'),
-    supabase.from('reference_clips').select('*').order('created_at'),
+  const [sounds, allClips] = await Promise.all([
+    db.getSounds(),
+    db.getAllClips(),
   ])
 
-  const sounds = soundsRes.data || []
-  const clips  = clipsRes.data  || []
+  // Sort sounds by category then name
+  sounds.sort((a, b) => {
+    const ci = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category)
+    return ci !== 0 ? ci : a.name.localeCompare(b.name)
+  })
 
   // Group clips by sound_id
   const clipsBySound = new Map()
-  for (const clip of clips) {
+  for (const clip of allClips) {
     if (!clipsBySound.has(clip.sound_id)) clipsBySound.set(clip.sound_id, [])
     clipsBySound.get(clip.sound_id).push(clip)
   }
@@ -60,12 +42,10 @@ export async function render(params) {
   const listEl = main.querySelector('#admin-sounds-list')
   listEl.innerHTML = ''
 
-  // Render grouped by category
   const byCategory = new Map(CATEGORY_ORDER.map(c => [c, []]))
   for (const sound of sounds) {
-    const cat = sound.category
-    if (!byCategory.has(cat)) byCategory.set(cat, [])
-    byCategory.get(cat).push(sound)
+    if (!byCategory.has(sound.category)) byCategory.set(sound.category, [])
+    byCategory.get(sound.category).push(sound)
   }
 
   for (const [cat, catSounds] of byCategory) {
@@ -77,8 +57,7 @@ export async function render(params) {
 
     for (const sound of catSounds) {
       const soundClips = clipsBySound.get(sound.id) || []
-      const panel = buildSoundPanel(sound, soundClips, user)
-      section.appendChild(panel)
+      section.appendChild(buildSoundPanel(sound, soundClips))
     }
 
     listEl.appendChild(section)
@@ -87,7 +66,7 @@ export async function render(params) {
 
 // ─── Sound panel ──────────────────────────────────────────────────────────────
 
-function buildSoundPanel(sound, clips, user) {
+function buildSoundPanel(sound, clips) {
   const panel = document.createElement('div')
   panel.className = 'admin-sound-panel card'
   panel.dataset.soundId = sound.id
@@ -115,12 +94,11 @@ function buildSoundPanel(sound, clips, user) {
     </div>
   `
 
-  // Synth demo
   panel.querySelector('.btn-play-synth').addEventListener('click', () => playDemo(sound.symbol))
 
-  // Toggle expand/collapse
-  const toggleBtn  = panel.querySelector('.btn-toggle-panel')
-  const body       = panel.querySelector('.admin-panel-body')
+  const toggleBtn = panel.querySelector('.btn-toggle-panel')
+  const body      = panel.querySelector('.admin-panel-body')
+
   toggleBtn.addEventListener('click', () => {
     const open = body.hidden
     body.hidden = !open
@@ -128,10 +106,8 @@ function buildSoundPanel(sound, clips, user) {
     toggleBtn.setAttribute('aria-expanded', String(open))
 
     if (open) {
-      // Render clips list on first open
       renderClipsList(panel.querySelector(`#clips-${sound.id}`), clips, sound.id)
 
-      // Mount upload widget
       const uploadMount = panel.querySelector(`#upload-mount-${sound.id}`)
       if (!uploadMount._widgetMounted) {
         uploadMount._widgetMounted = true
@@ -139,11 +115,10 @@ function buildSoundPanel(sound, clips, user) {
           onUploaded(newClip) {
             clips.push(newClip)
             renderClipsList(panel.querySelector(`#clips-${sound.id}`), clips, sound.id)
-            // Update clip count badge
             const countBadge = panel.querySelector('.admin-clip-count')
             const h = clipHealth(clips.length)
             countBadge.textContent = `${clips.length} clip${clips.length !== 1 ? 's' : ''}`
-            countBadge.className = `badge ${h.class}`
+            countBadge.className   = `badge ${h.class}`
           },
         })
       }
@@ -163,7 +138,7 @@ function renderClipsList(container, clips, soundId) {
     return
   }
 
-  for (const clip of [...clips].reverse()) {  // newest first
+  for (const clip of [...clips].reverse()) {
     const row = document.createElement('div')
     row.className = 'admin-clip-row'
     row.dataset.clipId = clip.id
@@ -177,37 +152,35 @@ function renderClipsList(container, clips, soundId) {
         </span>
       </div>
       <div class="admin-clip-actions">
-        <button class="secondary btn-play-clip" data-path="${clip.storage_path}">▶ Play</button>
-        <button class="danger btn-delete-clip" data-clip-id="${clip.id}" data-path="${clip.storage_path}">Delete</button>
+        <button class="secondary btn-play-clip" data-clip-id="${clip.id}">▶ Play</button>
+        <button class="danger btn-delete-clip" data-clip-id="${clip.id}">Delete</button>
       </div>
     `
     container.appendChild(row)
   }
 
-  // Play button
+  const clipMap = new Map(clips.map(c => [c.id, c]))
+
   container.addEventListener('click', async (e) => {
     const playBtn = e.target.closest('.btn-play-clip')
     if (playBtn) {
-      const { data } = supabase.storage.from('reference-audio').getPublicUrl(playBtn.dataset.path)
-      if (data?.publicUrl) new Audio(data.publicUrl).play().catch(() => {})
+      const clip = clipMap.get(playBtn.dataset.clipId)
+      if (!clip?.audio_data) return
+      const blob = new Blob([clip.audio_data])
+      const url  = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audio.play().catch(() => {})
+      audio.addEventListener('ended', () => URL.revokeObjectURL(url))
       return
     }
 
     const delBtn = e.target.closest('.btn-delete-clip')
     if (delBtn) {
-      const clipId   = delBtn.dataset.clipId
-      const clipPath = delBtn.dataset.path
       if (!confirm('Delete this reference clip? This cannot be undone.')) return
-
-      delBtn.disabled = true
+      const clipId = delBtn.dataset.clipId
+      delBtn.disabled    = true
       delBtn.textContent = 'Deleting…'
-
-      // Delete from storage
-      await supabase.storage.from('reference-audio').remove([clipPath])
-      // Delete DB row
-      await supabase.from('reference_clips').delete().eq('id', clipId)
-
-      // Remove from local array and re-render
+      await db.deleteClip(clipId)
       const idx = clips.findIndex(c => c.id === clipId)
       if (idx !== -1) clips.splice(idx, 1)
       renderClipsList(container, clips, soundId)
@@ -218,8 +191,8 @@ function renderClipsList(container, clips, soundId) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function clipHealth(count) {
-  if (count === 0)      return { class: 'red',    label: 'No clips' }
-  if (count < 3)        return { class: 'orange',  label: 'Few clips' }
-  if (count <= 8)       return { class: 'green',   label: 'Good' }
-  return                       { class: 'accent',  label: 'Many' }
+  if (count === 0)  return { class: 'red' }
+  if (count < 3)    return { class: 'orange' }
+  if (count <= 8)   return { class: 'green' }
+  return                   { class: 'accent' }
 }

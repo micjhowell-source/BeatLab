@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js'
+import * as db from '../lib/db.js'
 import { renderGraph, computeUnlocks } from '../components/graph.js'
 import { createRecorderUI } from '../components/recorder-ui.js'
 import { renderFeedback } from '../components/feedback.js'
@@ -6,7 +6,7 @@ import { extractFeatures } from '../audio/analyser.js'
 import { scoreFull } from '../audio/similarity.js'
 import { playDemo } from '../audio/synth.js'
 
-const MASTERY_THRESHOLD = 72
+const MASTERY_THRESHOLD   = 72
 const MASTERY_CONSECUTIVE = 2
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
@@ -37,36 +37,18 @@ async function renderGraphView(main) {
     </div>
   `
 
-  const [soundsRes, edgesRes] = await Promise.all([
-    supabase.from('sounds').select('*').order('created_at'),
-    supabase.from('skill_edges').select('*'),
+  const [sounds, edges, userProgress, userConnections, userGoals] = await Promise.all([
+    db.getSounds(),
+    db.getEdges(),
+    db.getAllProgress(),
+    db.getConnections(),
+    db.getGoals(),
   ])
 
-  const sounds = soundsRes.data || []
-  const edges  = edgesRes.data  || []
-
-  // Foundation nodes are always unlocked (kick, hihat-closed)
+  // Foundation nodes are always unlocked
   const foundationSlugs = new Set(['kick', 'hihat-closed'])
   const foundationIds   = new Set(sounds.filter(s => foundationSlugs.has(s.slug)).map(s => s.id))
 
-  const { data: { user } } = await supabase.auth.getUser()
-
-  let userProgress = []
-  let userConnections = []
-  let userGoals = []
-
-  if (user) {
-    const [pRes, cRes, gRes] = await Promise.all([
-      supabase.from('user_progress').select('*').eq('user_id', user.id),
-      supabase.from('user_skill_connections').select('*').eq('user_id', user.id),
-      supabase.from('user_goals').select('*').eq('user_id', user.id),
-    ])
-    userProgress    = pRes.data    || []
-    userConnections = cRes.data    || []
-    userGoals       = gRes.data    || []
-  }
-
-  // Ensure foundation nodes exist in progress as unlocked
   const progressMap = new Map(userProgress.map(p => [p.sound_id, p]))
   for (const id of foundationIds) {
     if (!progressMap.has(id)) {
@@ -75,7 +57,7 @@ async function renderGraphView(main) {
       progressMap.get(id).is_unlocked = true
     }
   }
-  userProgress = [...progressMap.values()]
+  const allProgress = [...progressMap.values()]
 
   const container = main.querySelector('#graph-container')
   container.innerHTML = ''
@@ -83,31 +65,26 @@ async function renderGraphView(main) {
   renderGraph(container, {
     sounds,
     edges,
-    userProgress,
+    userProgress: allProgress,
     userConnections,
     userGoals,
     onNodeClick(sound) {
       window.location.hash = `#/learn/${sound.slug}`
     },
     async onGoalToggle(sound, isGoal) {
-      if (!user) { alert('Sign in to set goals.'); return }
       if (isGoal) {
-        await supabase.from('user_goals').delete().match({ user_id: user.id, sound_id: sound.id })
+        await db.removeGoal(sound.id)
       } else {
-        await supabase.from('user_goals').insert({ user_id: user.id, sound_id: sound.id })
+        await db.addGoal(sound.id)
       }
       await renderGraphView(main)
     },
     async onAddConnection(fromId, toId) {
-      if (!user) { alert('Sign in to add connections.'); return }
-      await supabase.from('user_skill_connections').insert({
-        user_id: user.id, from_sound_id: fromId, to_sound_id: toId,
-      })
+      await db.addConnection(fromId, toId)
       await renderGraphView(main)
     },
     async onRemoveConnection(connId) {
-      if (!user) return
-      await supabase.from('user_skill_connections').delete().eq('id', connId)
+      await db.removeConnection(connId)
       await renderGraphView(main)
     },
   })
@@ -118,29 +95,19 @@ async function renderGraphView(main) {
 async function renderLesson(main, soundSlug) {
   main.innerHTML = `<div class="page"><div class="loading-spinner">Loading lesson…</div></div>`
 
-  const { data: sounds } = await supabase.from('sounds').select('*').eq('slug', soundSlug).limit(1)
-  const sound = sounds?.[0]
+  const sounds = await db.getSounds()
+  const sound  = sounds.find(s => s.slug === soundSlug)
 
   if (!sound) {
     main.innerHTML = `<div class="page"><p class="text-muted">Sound not found: ${soundSlug}</p></div>`
     return
   }
 
-  const [clipsRes, allEdgesRes] = await Promise.all([
-    supabase.from('reference_clips').select('*').eq('sound_id', sound.id),
-    supabase.from('skill_edges').select('*'),
+  const [refClips, allEdges, progress] = await Promise.all([
+    db.getClips(sound.id),
+    db.getEdges(),
+    db.getProgress(sound.id),
   ])
-  const refClips = clipsRes.data  || []
-  const allEdges = allEdgesRes.data || []
-
-  const { data: { user } } = await supabase.auth.getUser()
-
-  let progress = null
-  if (user) {
-    const { data } = await supabase.from('user_progress').select('*')
-      .eq('user_id', user.id).eq('sound_id', sound.id).limit(1)
-    progress = data?.[0] || null
-  }
 
   const categoryBadgeClass = { kick: 'accent', hat: 'blue', snare: 'orange', bass: 'purple', fx: 'green' }[sound.category] || ''
   const attemptHistory = progress?.score_history?.slice(-10) || []
@@ -151,7 +118,6 @@ async function renderLesson(main, soundSlug) {
         <a href="#/learn">← Skill Graph</a>
       </nav>
 
-      <!-- 1. Header -->
       <div class="lesson-header">
         <div class="lesson-header-left">
           <h1>${sound.name}</h1>
@@ -163,7 +129,6 @@ async function renderLesson(main, soundSlug) {
         </div>
       </div>
 
-      <!-- 2. Technique card -->
       <div class="lesson-section">
         <div class="card technique-card">
           <h3>Technique</h3>
@@ -181,7 +146,6 @@ async function renderLesson(main, soundSlug) {
         </div>
       </div>
 
-      <!-- 3. Demo section -->
       <div class="lesson-section">
         <div class="card demo-card">
           <h3>Synthesised Demo</h3>
@@ -190,32 +154,28 @@ async function renderLesson(main, soundSlug) {
         </div>
       </div>
 
-      <!-- 4. Reference clips -->
       <div class="lesson-section">
         <div class="card">
           <h3>Reference Clips <span class="badge">${refClips.length}</span></h3>
           ${refClips.length === 0
-            ? '<p class="text-muted" style="margin-top:0.75rem">No reference clips uploaded yet. Ask the admin to add some.</p>'
+            ? '<p class="text-muted" style="margin-top:0.75rem">No reference clips yet. Go to Admin to add some.</p>'
             : `<div class="ref-clips-list" id="ref-clips-list"></div>`
           }
         </div>
       </div>
 
-      <!-- 5. Attempt section -->
       <div class="lesson-section">
         <div class="card">
           <h3>Your Attempt</h3>
           ${refClips.length === 0
-            ? '<p class="text-muted" style="margin-top:0.5rem">Add reference clips before attempting — they\'re needed for scoring.</p>'
+            ? '<p class="text-muted" style="margin-top:0.5rem">Add reference clips in Admin before attempting — they\'re needed for scoring.</p>'
             : '<div id="recorder-mount"></div>'
           }
         </div>
       </div>
 
-      <!-- 6. Feedback -->
       <div class="lesson-section" id="feedback-section"></div>
 
-      <!-- 7. Attempt history -->
       ${attemptHistory.length >= 2 ? `
         <div class="lesson-section">
           <div class="card">
@@ -225,26 +185,15 @@ async function renderLesson(main, soundSlug) {
         </div>
       ` : ''}
 
-      <!-- 8. Progress to mastery -->
       <div class="lesson-section">
         <div class="card mastery-card" id="mastery-progress"></div>
       </div>
-
-      ${!user ? `
-        <div class="save-progress-banner" id="save-banner" style="display:none">
-          <p>Sign in to save your progress and track your improvement.</p>
-          <button id="btn-banner-signin">Sign in with email</button>
-        </div>
-      ` : ''}
     </div>
   `
 
-  // ── Demo button ──
-  main.querySelector('#btn-play-demo')?.addEventListener('click', () => {
-    playDemo(sound.symbol)
-  })
+  main.querySelector('#btn-play-demo')?.addEventListener('click', () => playDemo(sound.symbol))
 
-  // ── Reference clips ──
+  // Reference clips — play via object URL from stored ArrayBuffer
   const refList = main.querySelector('#ref-clips-list')
   if (refList && refClips.length > 0) {
     for (const clip of refClips) {
@@ -253,30 +202,33 @@ async function renderLesson(main, soundSlug) {
       row.innerHTML = `
         <span class="ref-clip-label">${clip.label || 'Reference'}</span>
         ${clip.duration_ms ? `<span class="ref-clip-dur text-muted">${(clip.duration_ms / 1000).toFixed(1)}s</span>` : ''}
-        <button class="secondary btn-play-clip" data-path="${clip.storage_path}">▶ Play</button>
+        <button class="secondary btn-play-clip" data-clip-id="${clip.id}">▶ Play</button>
       `
       refList.appendChild(row)
     }
 
-    refList.addEventListener('click', async (e) => {
+    const clipMap = new Map(refClips.map(c => [c.id, c]))
+    refList.addEventListener('click', (e) => {
       const btn = e.target.closest('.btn-play-clip')
       if (!btn) return
-      const { data } = supabase.storage.from('reference-audio').getPublicUrl(btn.dataset.path)
-      if (!data?.publicUrl) return
-      const audio = new Audio(data.publicUrl)
+      const clip = clipMap.get(btn.dataset.clipId)
+      if (!clip?.audio_data) return
+      const blob = new Blob([clip.audio_data])
+      const url  = URL.createObjectURL(blob)
+      const audio = new Audio(url)
       audio.play().catch(() => {})
+      audio.addEventListener('ended', () => URL.revokeObjectURL(url))
     })
   }
 
-  // ── Recorder & scoring ──
-  const recorderMount = main.querySelector('#recorder-mount')
+  const recorderMount  = main.querySelector('#recorder-mount')
   const feedbackSection = main.querySelector('#feedback-section')
-  const masteryCard = main.querySelector('#mastery-progress')
+  const masteryCard     = main.querySelector('#mastery-progress')
 
-  let sessionAttempts = 0  // for sign-in prompt tracking
   let consecutiveCount = countConsecutive(progress?.score_history || [], MASTERY_THRESHOLD)
+  let currentProgress  = progress || null
 
-  updateMasteryCard(masteryCard, progress, consecutiveCount)
+  updateMasteryCard(masteryCard, currentProgress, consecutiveCount)
 
   if (recorderMount && refClips.length > 0) {
     createRecorderUI(recorderMount, {
@@ -286,98 +238,61 @@ async function renderLesson(main, soundSlug) {
         let scores
         try {
           const attemptVec = await extractFeatures(audioBuffer)
-          const attemptRaw = attemptVec   // same vector; sub-scores use indices 13-16
-
-          const refVecs = refClips.map(c => c.feature_vector).filter(Boolean)
-          const refRaws = refVecs         // same stored vectors used for sub-score comparisons
+          const refVecs    = refClips.map(c => c.feature_vector).filter(Boolean).map(v => new Float32Array(v))
 
           if (refVecs.length === 0) {
-            feedbackSection.innerHTML = '<div class="card"><p class="text-muted">No feature vectors on reference clips yet.</p></div>'
+            feedbackSection.innerHTML = '<div class="card"><p class="text-muted">No feature vectors on reference clips yet. Re-upload clips in Admin.</p></div>'
             return
           }
 
-          scores = scoreFull(attemptVec, attemptRaw, refVecs, refRaws)
+          scores = scoreFull(attemptVec, attemptVec, refVecs, refVecs)
         } catch (err) {
           console.error('Scoring error:', err)
           feedbackSection.innerHTML = `<div class="card"><p style="color:var(--red)">Scoring failed: ${err.message}</p></div>`
           return
         }
 
-        sessionAttempts++
-
-        // Update consecutive count
         if (scores.overall >= MASTERY_THRESHOLD) {
           consecutiveCount++
         } else {
           consecutiveCount = 0
         }
 
-        // Persist progress
-        if (user) {
-          const newHistory = [...(progress?.score_history || []), scores.overall].slice(-20)
-          const isMasteredNow = consecutiveCount >= MASTERY_CONSECUTIVE
+        const newHistory    = [...(currentProgress?.score_history || []), scores.overall].slice(-20)
+        const isMasteredNow = consecutiveCount >= MASTERY_CONSECUTIVE
 
-          const progressRow = {
-            user_id: user.id,
-            sound_id: sound.id,
-            is_unlocked: true,
-            is_mastered: isMasteredNow || (progress?.is_mastered ?? false),
-            best_score: Math.max(scores.overall, progress?.best_score ?? 0),
-            attempt_count: (progress?.attempt_count ?? 0) + 1,
-            score_history: newHistory,
-            last_attempt: new Date().toISOString(),
-          }
-
-          const { data: upserted } = await supabase
-            .from('user_progress')
-            .upsert(progressRow, { onConflict: 'user_id,sound_id' })
-            .select()
-            .single()
-
-          progress = upserted || { ...progressRow }
-
-          // Unlock adjacent sounds if newly mastered
-          if (isMasteredNow && !progress?.is_mastered) {
-            await unlockAdjacent(user.id, sound.id, allEdges)
-          }
+        const progressRow = {
+          sound_id:      sound.id,
+          is_unlocked:   true,
+          is_mastered:   isMasteredNow || (currentProgress?.is_mastered ?? false),
+          best_score:    Math.max(scores.overall, currentProgress?.best_score ?? 0),
+          attempt_count: (currentProgress?.attempt_count ?? 0) + 1,
+          score_history: newHistory,
+          last_attempt:  new Date().toISOString(),
         }
 
-        // Render feedback
+        currentProgress = await db.upsertProgress(progressRow)
+
+        if (isMasteredNow && !progress?.is_mastered) {
+          await unlockAdjacent(sound.id, allEdges)
+        }
+
         renderFeedback(feedbackSection, scores, {
-          attemptHistory: progress?.score_history?.slice(-10) || [scores.overall],
+          attemptHistory:     newHistory.slice(-10),
           consecutiveCount,
-          neededConsecutive: MASTERY_CONSECUTIVE,
-          masteryThreshold: MASTERY_THRESHOLD,
+          neededConsecutive:  MASTERY_CONSECUTIVE,
+          masteryThreshold:   MASTERY_THRESHOLD,
         })
 
-        updateMasteryCard(masteryCard, progress, consecutiveCount)
-
-        // Sign-in prompt after 3 attempts or score > 60
-        if (!user && (sessionAttempts >= 3 || scores.overall > 60)) {
-          main.querySelector('#save-banner')?.style.removeProperty('display')
-        }
+        updateMasteryCard(masteryCard, currentProgress, consecutiveCount)
       },
     })
   }
 
-  // ── History sparkline (standalone) ──
   const sparklineMount = main.querySelector('#history-sparkline')
   if (sparklineMount && attemptHistory.length >= 2) {
-    // Rendered inside feedback component — just import standalone version
-    const { default: _ } = await import('../components/feedback.js').catch(() => ({}))
     renderFeedback(sparklineMount, null, { attemptHistory })
   }
-
-  // ── Sign-in banner ──
-  main.querySelector('#btn-banner-signin')?.addEventListener('click', () => {
-    const email = prompt('Enter your email address:')
-    if (!email) return
-    supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } })
-      .then(({ error }) => {
-        if (error) alert('Error: ' + error.message)
-        else alert('Check your email for a magic link!')
-      })
-  })
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -393,10 +308,10 @@ function countConsecutive(history, threshold) {
 
 function updateMasteryCard(el, progress, consecutiveCount) {
   if (!el) return
-  const best = progress?.best_score || 0
-  const attempts = progress?.attempt_count || 0
-  const isMastered = progress?.is_mastered || false
-  const needed = Math.max(0, MASTERY_CONSECUTIVE - consecutiveCount)
+  const best      = progress?.best_score   || 0
+  const attempts  = progress?.attempt_count || 0
+  const isMastered = progress?.is_mastered  || false
+  const needed    = Math.max(0, MASTERY_CONSECUTIVE - consecutiveCount)
 
   el.innerHTML = `
     <div class="mastery-row">
@@ -416,32 +331,21 @@ function updateMasteryCard(el, progress, consecutiveCount) {
   `
 }
 
-async function unlockAdjacent(userId, soundId, allEdges) {
-  const { data: allProgress } = await supabase
-    .from('user_progress').select('*').eq('user_id', userId)
-
-  const masteredIds = new Set((allProgress || []).filter(p => p.is_mastered).map(p => p.sound_id))
+async function unlockAdjacent(soundId, allEdges) {
+  const allProgress = await db.getAllProgress()
+  const masteredIds = new Set(allProgress.filter(p => p.is_mastered).map(p => p.sound_id))
   masteredIds.add(soundId)
 
   const toUnlock = computeUnlocks(masteredIds, allEdges)
   if (toUnlock.size === 0) return
 
-  const existingIds = new Set((allProgress || []).map(p => p.sound_id))
-  const inserts = []
-  const updates = []
-
+  const existingIds = new Set(allProgress.map(p => p.sound_id))
   for (const id of toUnlock) {
     if (existingIds.has(id)) {
-      updates.push(supabase.from('user_progress')
-        .update({ is_unlocked: true })
-        .match({ user_id: userId, sound_id: id }))
+      const existing = allProgress.find(p => p.sound_id === id)
+      await db.upsertProgress({ ...existing, is_unlocked: true })
     } else {
-      inserts.push({ user_id: userId, sound_id: id, is_unlocked: true })
+      await db.upsertProgress({ sound_id: id, is_unlocked: true, is_mastered: false, attempt_count: 0, score_history: [] })
     }
   }
-
-  await Promise.all([
-    ...updates,
-    inserts.length ? supabase.from('user_progress').insert(inserts) : Promise.resolve(),
-  ])
 }

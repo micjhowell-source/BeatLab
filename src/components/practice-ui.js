@@ -1,5 +1,5 @@
-import { supabase } from '../supabase.js'
-import { startRecording, stopRecording, startWaveformDraw, isRecording } from '../audio/recorder.js'
+import * as db from '../lib/db.js'
+import { startRecording, stopRecording, startWaveformDraw } from '../audio/recorder.js'
 import { scheduleSound, getSharedContext } from '../audio/synth.js'
 import { detectOnsets } from '../audio/analyser.js'
 import { mapHitsToSteps, scoreHits, aggregateSequenceScore } from '../audio/practice.js'
@@ -8,11 +8,6 @@ import { scoreColor } from '../lib/utils.js'
 
 const MAX_LOOPS   = 3
 const COUNTDOWN_S = 3
-
-// ─── Main practice UI ────────────────────────────────────────────────────────
-// Creates a self-contained practice panel beneath the sequence editor.
-// sequence: { id, notation, bpm, stepCount }
-// referenceMap: Map<symbol, Float32Array[]>  — fetched by caller
 
 export function createPracticeUI(container, sequence, referenceMap) {
   const el = document.createElement('div')
@@ -66,27 +61,23 @@ export function createPracticeUI(container, sequence, referenceMap) {
     el.querySelectorAll('.practice-phase').forEach(p => { p.hidden = p.id !== id })
   }
 
-  // ── Step 1: play sequence once for the user to listen ──
   async function startPractice() {
     showPhase('phase-listen')
-    const steps       = parseNotation(sequence.notation)
-    const stepDurSec  = 60 / sequence.bpm / 4
-    const totalSec    = steps.length * stepDurSec
+    const steps      = parseNotation(sequence.notation)
+    const stepDurSec = 60 / sequence.bpm / 4
+    const totalSec   = steps.length * stepDurSec
 
-    const ac = getSharedContext()
+    const ac     = getSharedContext()
     const startT = ac.currentTime + 0.1
 
-    // Schedule all sounds
     steps.forEach((sym, i) => {
       if (sym !== '-') scheduleSound(sym, ac, startT + i * stepDurSec)
     })
 
-    // Animate progress bar
     const fill = el.querySelector('#listen-fill')
-    const t0 = performance.now()
+    const t0   = performance.now()
     function animateFill() {
-      const elapsed = (performance.now() - t0) / 1000
-      const pct = Math.min(100, (elapsed / totalSec) * 100)
+      const pct = Math.min(100, ((performance.now() - t0) / 1000 / totalSec) * 100)
       fill.style.width = pct + '%'
       if (pct < 100) requestAnimationFrame(animateFill)
     }
@@ -96,14 +87,13 @@ export function createPracticeUI(container, sequence, referenceMap) {
     await doCountdown()
   }
 
-  // ── Step 2: countdown ──
   async function doCountdown() {
     showPhase('phase-countdown')
     const numEl = el.querySelector('#countdown-num')
     for (let i = COUNTDOWN_S; i >= 1; i--) {
       numEl.textContent = i
       numEl.classList.remove('pop')
-      void numEl.offsetWidth  // reflow to restart animation
+      void numEl.offsetWidth
       numEl.classList.add('pop')
       await sleep(1000)
     }
@@ -115,36 +105,30 @@ export function createPracticeUI(container, sequence, referenceMap) {
     await startRecordingPhase()
   }
 
-  // ── Step 3: record up to MAX_LOOPS loops ──
   async function startRecordingPhase() {
     showPhase('phase-record')
     const steps      = parseNotation(sequence.notation)
     const stepDurSec = 60 / sequence.bpm / 4
     const loopSec    = steps.length * stepDurSec
     const totalSec   = loopSec * MAX_LOOPS
-
-    const loopNumEl = el.querySelector('#loop-num')
+    const loopNumEl  = el.querySelector('#loop-num')
 
     try {
       await startRecording()
     } catch {
       showPhase('phase-idle')
-      el.querySelector('.practice-btn-start').textContent = '▶ Start practice'
       return
     }
 
     stopWaveform = startWaveformDraw(waveCanvas)
 
-    // Schedule looped playback as metronome guide (quieter second/third loop)
-    const ac = getSharedContext()
+    const ac     = getSharedContext()
     const startT = ac.currentTime + 0.05
     for (let loop = 0; loop < MAX_LOOPS; loop++) {
       const loopOffset = startT + loop * loopSec
       steps.forEach((sym, i) => {
         if (sym !== '-') scheduleSound(sym, ac, loopOffset + i * stepDurSec)
       })
-
-      // Update loop counter near the right time
       setTimeout(() => { loopNumEl.textContent = loop + 1 }, loop * loopSec * 1000)
     }
 
@@ -156,7 +140,6 @@ export function createPracticeUI(container, sequence, referenceMap) {
     await finishRecording()
   }
 
-  // ── Step 4: analyse ──
   async function finishRecording() {
     if (stopWaveform) { stopWaveform(); stopWaveform = null }
     clearTimeout(recordTimeout)
@@ -169,27 +152,18 @@ export function createPracticeUI(container, sequence, referenceMap) {
     const steps      = parseNotation(sequence.notation)
     const stepDurSec = 60 / sequence.bpm / 4
 
-    // Detect onsets
-    const onsets = detectOnsets(audioBuffer, 0.25)
-
-    // Map hits to steps
-    const hits = mapHitsToSteps(onsets, audioBuffer.sampleRate, stepDurSec, steps.length)
-
-    // Score each hit
+    const onsets     = detectOnsets(audioBuffer, 0.25)
+    const hits       = mapHitsToSteps(onsets, audioBuffer.sampleRate, stepDurSec, steps.length)
     const scoredHits = await scoreHits(audioBuffer, hits, steps, referenceMap)
+    const result     = aggregateSequenceScore(scoredHits, steps)
 
-    // Aggregate
-    const result = aggregateSequenceScore(scoredHits, steps)
-
-    // Persist attempt if logged in
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user && sequence.id) {
-      await supabase.from('sequence_attempts').insert({
-        user_id:        user.id,
-        sequence_id:    sequence.id,
-        overall_score:  result.overall,
-        timing_score:   result.timingScore,
-        sound_score:    result.soundScore,
+    // Persist attempt locally
+    if (sequence.id) {
+      await db.insertSequenceAttempt({
+        sequence_id:   sequence.id,
+        overall_score: result.overall,
+        timing_score:  result.timingScore,
+        sound_score:   result.soundScore,
         per_hit_scores: result.perHit,
       })
     }
@@ -197,29 +171,22 @@ export function createPracticeUI(container, sequence, referenceMap) {
     renderResults(result, steps)
   }
 
-  // ── Step 5: timeline results ──
   function renderResults(result, steps) {
     showPhase('phase-results')
-    const phase = el.querySelector('#phase-results')
-
+    const phase        = el.querySelector('#phase-results')
     const overallColor = scoreColor(result.overall)
-
-    // Build per-step map for lookup
-    const hitByStep = new Map(result.perHit.map(h => [h.stepIndex, h]))
+    const hitByStep    = new Map(result.perHit.map(h => [h.stepIndex, h]))
 
     const stepCells = steps.map((sym, i) => {
       if (sym === '-') {
-        return `<div class="result-cell result-cell--rest">
-          <span class="result-cell-sym">–</span>
-        </div>`
+        return `<div class="result-cell result-cell--rest"><span class="result-cell-sym">–</span></div>`
       }
-      const hit = hitByStep.get(i)
-      const ss  = hit?.soundScore  ?? 0
-      const ts  = hit?.timingScore ?? 0
+      const hit      = hitByStep.get(i)
+      const ss       = hit?.soundScore  ?? 0
+      const ts       = hit?.timingScore ?? 0
       const combined = hit ? Math.round(ss * 0.6 + ts * 0.4) : 0
-      const color = combined >= 72 ? 'var(--green)' : combined >= 48 ? 'var(--accent)' : combined >= 25 ? 'var(--accent2)' : 'var(--red)'
-      const missed = hit?.missed ? ' result-cell--missed' : ''
-
+      const color    = combined >= 72 ? 'var(--green)' : combined >= 48 ? 'var(--accent)' : combined >= 25 ? 'var(--accent2)' : 'var(--red)'
+      const missed   = hit?.missed ? ' result-cell--missed' : ''
       return `<div class="result-cell${missed}" style="--result-color:${color}" title="${sym}: sound ${ss} · timing ${ts}">
         <span class="result-cell-sym">${escHtml(sym)}</span>
         <span class="result-cell-score">${combined}</span>
@@ -238,7 +205,6 @@ export function createPracticeUI(container, sequence, referenceMap) {
           </div>
         </div>
       </div>
-
       <div class="result-timeline">
         <p class="result-timeline-label">Per-step breakdown</p>
         <div class="result-step-grid">${stepCells}</div>
@@ -249,48 +215,32 @@ export function createPracticeUI(container, sequence, referenceMap) {
           <span class="legend-item" style="--lc:var(--red)">■ Missed</span>
         </div>
       </div>
-
       <div class="result-actions">
         <button class="practice-btn-retry secondary">↺ Try again</button>
       </div>
     `
 
-    phase.querySelector('.practice-btn-retry').addEventListener('click', () => {
-      showPhase('phase-idle')
-    })
+    phase.querySelector('.practice-btn-retry').addEventListener('click', () => showPhase('phase-idle'))
   }
 }
 
 // ─── Reference map loader ─────────────────────────────────────────────────────
-// Fetches reference_clips feature vectors for all symbols in a sequence.
-// Returns Map<symbol, Float32Array[]>
+// Returns Map<symbol, Float32Array[]> from locally stored clips
 
 export async function loadReferenceMap(notation) {
   const symbols = [...new Set(parseNotation(notation).filter(s => s !== '-'))]
   if (symbols.length === 0) return new Map()
 
-  // Look up sound IDs for these symbols
-  const { data: sounds } = await supabase
-    .from('sounds')
-    .select('id, symbol')
-    .in('symbol', symbols)
-
-  if (!sounds?.length) return new Map()
-
-  const soundIdToSymbol = new Map(sounds.map(s => [s.id, s.symbol]))
-  const soundIds = sounds.map(s => s.id)
-
-  const { data: clips } = await supabase
-    .from('reference_clips')
-    .select('sound_id, feature_vector')
-    .in('sound_id', soundIds)
+  const sounds = await db.getSounds()
+  const symbolToId = new Map(sounds.map(s => [s.symbol, s.id]))
 
   const map = new Map()
-  for (const clip of clips || []) {
-    const sym = soundIdToSymbol.get(clip.sound_id)
-    if (!sym || !clip.feature_vector) continue
-    if (!map.has(sym)) map.set(sym, [])
-    map.get(sym).push(new Float32Array(clip.feature_vector))
+  for (const sym of symbols) {
+    const soundId = symbolToId.get(sym)
+    if (!soundId) continue
+    const clips = await db.getClips(soundId)
+    const vecs  = clips.map(c => c.feature_vector).filter(Boolean).map(v => new Float32Array(v))
+    if (vecs.length > 0) map.set(sym, vecs)
   }
 
   return map

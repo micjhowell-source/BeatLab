@@ -1,14 +1,10 @@
-import { supabase } from '../supabase.js'
+import * as db from '../lib/db.js'
 import { extractFeatures } from '../audio/analyser.js'
 
 const MIN_DURATION_MS = 300
 const MAX_DURATION_MS = 3000
-const NOISE_FLOOR_RMS  = 0.01   // reject clips quieter than this
+const NOISE_FLOOR_RMS  = 0.01
 const ACCEPTED_TYPES   = new Set(['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp3'])
-
-// ─── Upload widget ────────────────────────────────────────────────────────────
-// Creates a self-contained upload panel for a single sound.
-// onUploaded(clip) is called after successful DB insert.
 
 export function createUploadWidget(container, soundId, { onUploaded } = {}) {
   const el = document.createElement('div')
@@ -30,7 +26,7 @@ export function createUploadWidget(container, soundId, { onUploaded } = {}) {
         <input class="upload-label-input" type="text" placeholder='Label e.g. "male voice — UK style"' maxlength="80">
       </div>
       <div class="upload-actions">
-        <button class="upload-btn-submit" type="button">Upload clip</button>
+        <button class="upload-btn-submit" type="button">Save clip</button>
       </div>
     </div>
     <div class="upload-status" aria-live="polite"></div>
@@ -39,28 +35,25 @@ export function createUploadWidget(container, soundId, { onUploaded } = {}) {
 
   container.appendChild(el)
 
-  const dropZone      = el.querySelector('.upload-drop-zone')
-  const fileInput     = el.querySelector('.upload-file-input')
-  const form          = el.querySelector('.upload-form')
-  const previewName   = el.querySelector('.upload-preview-name')
-  const previewDur    = el.querySelector('.upload-preview-dur')
-  const btnClear      = el.querySelector('.upload-btn-clear')
-  const labelInput    = el.querySelector('.upload-label-input')
-  const btnSubmit     = el.querySelector('.upload-btn-submit')
-  const statusEl      = el.querySelector('.upload-status')
+  const dropZone       = el.querySelector('.upload-drop-zone')
+  const fileInput      = el.querySelector('.upload-file-input')
+  const form           = el.querySelector('.upload-form')
+  const previewName    = el.querySelector('.upload-preview-name')
+  const previewDur     = el.querySelector('.upload-preview-dur')
+  const btnClear       = el.querySelector('.upload-btn-clear')
+  const labelInput     = el.querySelector('.upload-label-input')
+  const btnSubmit      = el.querySelector('.upload-btn-submit')
+  const statusEl       = el.querySelector('.upload-status')
   const featureSummary = el.querySelector('.upload-feature-summary')
 
-  let pendingFile   = null
-  let pendingBuffer = null   // decoded AudioBuffer
+  let pendingFile       = null
+  let pendingBuffer     = null
+  let pendingArrayBuffer = null
 
-  // ── Drop zone events ──
   dropZone.addEventListener('click', () => fileInput.click())
   dropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click() })
 
-  dropZone.addEventListener('dragover', e => {
-    e.preventDefault()
-    dropZone.classList.add('dragover')
-  })
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover') })
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'))
   dropZone.addEventListener('drop', e => {
     e.preventDefault()
@@ -75,10 +68,8 @@ export function createUploadWidget(container, soundId, { onUploaded } = {}) {
   })
 
   btnClear.addEventListener('click', resetForm)
+  btnSubmit.addEventListener('click', doSave)
 
-  btnSubmit.addEventListener('click', doUpload)
-
-  // ── File handling ──
   async function handleFile(file) {
     setStatus('', '')
 
@@ -89,11 +80,11 @@ export function createUploadWidget(container, soundId, { onUploaded } = {}) {
 
     setStatus('Decoding audio…', 'info')
 
-    let audioBuffer
+    let audioBuffer, rawArrayBuffer
     try {
-      const arrayBuffer = await file.arrayBuffer()
+      rawArrayBuffer = await file.arrayBuffer()
       const ac = new AudioContext()
-      audioBuffer = await ac.decodeAudioData(arrayBuffer)
+      audioBuffer = await ac.decodeAudioData(rawArrayBuffer.slice(0))
       await ac.close()
     } catch {
       setStatus('Could not decode this audio file.', 'error')
@@ -111,15 +102,15 @@ export function createUploadWidget(container, soundId, { onUploaded } = {}) {
       return
     }
 
-    // Check noise floor
     const rms = computeRms(audioBuffer)
     if (rms < NOISE_FLOOR_RMS) {
       setStatus(`Clip is too quiet (RMS ${rms.toFixed(4)}). Move closer to the mic.`, 'error')
       return
     }
 
-    pendingFile   = file
-    pendingBuffer = audioBuffer
+    pendingFile        = file
+    pendingBuffer      = audioBuffer
+    pendingArrayBuffer = rawArrayBuffer
 
     previewName.textContent = file.name
     previewDur.textContent  = `${(durationMs / 1000).toFixed(2)}s · RMS ${rms.toFixed(3)}`
@@ -127,14 +118,13 @@ export function createUploadWidget(container, soundId, { onUploaded } = {}) {
     form.hidden     = false
     featureSummary.hidden = true
 
-    setStatus('File looks good. Add a label and click Upload.', 'success')
+    setStatus('File looks good. Add a label and click Save.', 'success')
   }
 
-  // ── Upload ──
-  async function doUpload() {
+  async function doSave() {
     if (!pendingFile || !pendingBuffer) return
 
-    btnSubmit.disabled = true
+    btnSubmit.disabled    = true
     btnSubmit.textContent = 'Extracting features…'
     setStatus('Running Meyda feature extraction…', 'info')
 
@@ -144,90 +134,61 @@ export function createUploadWidget(container, soundId, { onUploaded } = {}) {
       featureVector = Array.from(vec)
     } catch (err) {
       setStatus(`Feature extraction failed: ${err.message}`, 'error')
-      btnSubmit.disabled = false
-      btnSubmit.textContent = 'Upload clip'
+      btnSubmit.disabled    = false
+      btnSubmit.textContent = 'Save clip'
       return
     }
 
-    setStatus('Uploading audio file…', 'info')
-    btnSubmit.textContent = 'Uploading…'
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      setStatus('You must be signed in to upload.', 'error')
-      resetForm()
-      return
-    }
-
-    const ext = pendingFile.name.split('.').pop().toLowerCase()
-    const storagePath = `${soundId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-
-    const { error: storageErr } = await supabase.storage
-      .from('reference-audio')
-      .upload(storagePath, pendingFile, { contentType: pendingFile.type, upsert: false })
-
-    if (storageErr) {
-      setStatus(`Storage upload failed: ${storageErr.message}`, 'error')
-      btnSubmit.disabled = false
-      btnSubmit.textContent = 'Upload clip'
-      return
-    }
+    setStatus('Saving…', 'info')
+    btnSubmit.textContent = 'Saving…'
 
     const durationMs = Math.round(pendingBuffer.duration * 1000)
-    const label = labelInput.value.trim() || null
+    const label      = labelInput.value.trim() || null
 
-    const { data: clip, error: dbErr } = await supabase
-      .from('reference_clips')
-      .insert({
-        sound_id: soundId,
-        storage_path: storagePath,
+    let clip
+    try {
+      clip = await db.insertClip({
+        sound_id:       soundId,
         label,
         feature_vector: featureVector,
-        duration_ms: durationMs,
-        uploaded_by: user.id,
+        audio_data:     pendingArrayBuffer,
+        duration_ms:    durationMs,
       })
-      .select()
-      .single()
-
-    if (dbErr) {
-      setStatus(`Database insert failed: ${dbErr.message}`, 'error')
-      btnSubmit.disabled = false
-      btnSubmit.textContent = 'Upload clip'
+    } catch (err) {
+      setStatus(`Save failed: ${err.message}`, 'error')
+      btnSubmit.disabled    = false
+      btnSubmit.textContent = 'Save clip'
       return
     }
 
-    // Show feature vector summary
     featureSummary.hidden = false
     featureSummary.innerHTML = `
       <p class="feature-summary-title">Feature vector (17 values)</p>
       <code class="feature-summary-values">${featureVector.map(v => v.toFixed(3)).join('  ')}</code>
     `
 
-    setStatus('✓ Clip uploaded successfully!', 'success')
+    setStatus('✓ Clip saved!', 'success')
     resetForm(false)
     onUploaded?.(clip)
   }
 
   function resetForm(clearStatus = true) {
-    pendingFile   = null
-    pendingBuffer = null
+    pendingFile = pendingBuffer = pendingArrayBuffer = null
     dropZone.hidden = false
     form.hidden     = true
-    labelInput.value = ''
-    btnSubmit.disabled  = false
-    btnSubmit.textContent = 'Upload clip'
+    labelInput.value      = ''
+    btnSubmit.disabled    = false
+    btnSubmit.textContent = 'Save clip'
     if (clearStatus) { setStatus('', ''); featureSummary.hidden = true }
   }
 
   function setStatus(msg, type) {
     statusEl.textContent = msg
-    statusEl.className = 'upload-status' + (type ? ` upload-status--${type}` : '')
+    statusEl.className   = 'upload-status' + (type ? ` upload-status--${type}` : '')
   }
 
   return { element: el }
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function computeRms(audioBuffer) {
   const data = audioBuffer.getChannelData(0)

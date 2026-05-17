@@ -1,5 +1,3 @@
-import { supabase } from '../supabase.js'
-
 const NODE_R = 30
 const LAYER_H = 150
 const H_SEP = 120
