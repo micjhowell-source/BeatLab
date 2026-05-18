@@ -138,28 +138,28 @@ function renderClipsList(container, clips, soundId) {
     return
   }
 
+  const clipMap = new Map(clips.map(c => [c.id, c]))
+
   for (const clip of [...clips].reverse()) {
     const row = document.createElement('div')
     row.className = 'admin-clip-row'
     row.dataset.clipId = clip.id
     row.innerHTML = `
       <div class="admin-clip-info">
-        <span class="admin-clip-label">${clip.label || '<em>No label</em>'}</span>
+        <span class="admin-clip-label" data-clip-id="${clip.id}">${clip.label || 'No label'}</span>
         <span class="admin-clip-meta text-muted">
           ${clip.duration_ms ? `${(clip.duration_ms / 1000).toFixed(2)}s` : ''}
-          · ${clip.feature_vector?.length ?? 0} features
           · ${new Date(clip.created_at).toLocaleDateString()}
         </span>
       </div>
       <div class="admin-clip-actions">
         <button class="secondary btn-play-clip" data-clip-id="${clip.id}">▶ Play</button>
+        <button class="secondary btn-rename-clip" data-clip-id="${clip.id}">Rename</button>
         <button class="danger btn-delete-clip" data-clip-id="${clip.id}">Delete</button>
       </div>
     `
     container.appendChild(row)
   }
-
-  const clipMap = new Map(clips.map(c => [c.id, c]))
 
   container.addEventListener('click', async (e) => {
     const playBtn = e.target.closest('.btn-play-clip')
@@ -171,6 +171,19 @@ function renderClipsList(container, clips, soundId) {
       const audio = new Audio(url)
       audio.play().catch(() => {})
       audio.addEventListener('ended', () => URL.revokeObjectURL(url))
+      return
+    }
+
+    const renameBtn = e.target.closest('.btn-rename-clip')
+    if (renameBtn) {
+      const clipId   = renameBtn.dataset.clipId
+      const clip     = clipMap.get(clipId)
+      const labelEl  = container.querySelector(`.admin-clip-label[data-clip-id="${clipId}"]`)
+      const newLabel = prompt('Rename clip:', clip.label || '')
+      if (newLabel === null || newLabel.trim() === '') return
+      clip.label   = newLabel.trim()
+      labelEl.textContent = clip.label
+      await db.updateClipLabel(clipId, clip.label)
       return
     }
 

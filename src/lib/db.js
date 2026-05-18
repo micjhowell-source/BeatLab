@@ -157,6 +157,13 @@ export async function insertClip({ sound_id, label, feature_vector, audio_data, 
   return clip
 }
 
+export async function updateClipLabel(id, label) {
+  const db   = await openDB()
+  const clip = await idbGet(db, 'clips', id)
+  if (!clip) return
+  await idbPut(db, 'clips', { ...clip, label })
+}
+
 export async function deleteClip(id) {
   const db = await openDB()
   await idbDelete(db, 'clips', id)

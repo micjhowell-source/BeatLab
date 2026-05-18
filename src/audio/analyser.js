@@ -21,10 +21,11 @@ function sliceIntoFrames(audioBuffer, windowSize, hopSize) {
   return frames
 }
 
-function extractFrameFeatures(frame) {
-  // Meyda.extract requires a power-of-2 buffer — frame is already WINDOW_SIZE
+function extractFrameFeatures(frame, prevFrame = null) {
+  // spectralFlux needs a previous frame — compute manually if available,
+  // otherwise 0 (Meyda's stateless extract throws without prior context)
   const features = Meyda.extract(
-    ['mfcc', 'spectralCentroid', 'zcr', 'spectralFlux', 'rms'],
+    ['mfcc', 'spectralCentroid', 'zcr', 'rms'],
     frame
   )
   if (!features) return null
@@ -34,7 +35,7 @@ function extractFrameFeatures(frame) {
   for (let i = 0; i < NUM_MFCC; i++) vec[i] = mfcc[i] ?? 0
   vec[13] = features.spectralCentroid ?? 0
   vec[14] = features.zcr ?? 0
-  vec[15] = features.spectralFlux ?? 0
+  vec[15] = prevFrame ? spectralFluxBetween(prevFrame, frame) : 0
   vec[16] = features.rms ?? 0
   return vec
 }
@@ -66,7 +67,7 @@ function zScoreNormalise(vec) {
 // near-zero similarities even for matching sounds.
 export async function extractFeatures(audioBuffer) {
   const frames = sliceIntoFrames(audioBuffer, WINDOW_SIZE, HOP_SIZE)
-  const frameVectors = frames.map(extractFrameFeatures)
+  const frameVectors = frames.map((frame, i) => extractFrameFeatures(frame, i > 0 ? frames[i - 1] : null))
   return averageFrameFeatures(frameVectors)
 }
 
