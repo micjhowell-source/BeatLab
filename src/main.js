@@ -1,5 +1,9 @@
 import './style.css'
 import { router } from './lib/router.js'
+import { loadStaticClips } from './audio/clip-loader.js'
+
+// Load any new clips from src/clips/ folders on every startup
+loadStaticClips().catch(console.warn)
 import { render as renderLearn } from './pages/learn.js'
 import { render as renderFreeplay } from './pages/freeplay.js'
 import { render as renderAdmin } from './pages/admin.js'

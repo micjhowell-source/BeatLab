@@ -1,6 +1,7 @@
 import * as db from '../lib/db.js'
 import { createUploadWidget } from '../components/upload.js'
 import { playDemo } from '../audio/synth.js'
+import { loadStaticClips } from '../audio/clip-loader.js'
 
 const CATEGORY_ORDER = ['kick', 'hat', 'snare', 'bass', 'fx']
 const CATEGORY_LABEL = { kick: 'Kick', hat: 'Hi-Hat', snare: 'Snare', bass: 'Bass', fx: 'FX' }
@@ -28,6 +29,9 @@ export async function render() {
       </div>
     </div>
   `
+
+  // Pick up any new files added to src/clips/ since last visit
+  await loadStaticClips()
 
   main.querySelector('#btn-export').addEventListener('click', exportClips)
   main.querySelector('#input-import').addEventListener('change', e => {

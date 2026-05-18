@@ -141,11 +141,12 @@ export async function getAllClips() {
   return idbGetAll(db, 'clips')
 }
 
-// clip.audio_data should be an ArrayBuffer
-export async function insertClip({ sound_id, label, feature_vector, audio_data, duration_ms }) {
+// clip.audio_data should be an ArrayBuffer.
+// Pass id to use a specific key (e.g. static clips use path-based IDs).
+export async function insertClip({ id, sound_id, label, feature_vector, audio_data, duration_ms }) {
   const db = await openDB()
   const clip = {
-    id: crypto.randomUUID(),
+    id: id || crypto.randomUUID(),
     sound_id,
     label: label || null,
     feature_vector,
@@ -155,6 +156,11 @@ export async function insertClip({ sound_id, label, feature_vector, audio_data, 
   }
   await idbPut(db, 'clips', clip)
   return clip
+}
+
+export async function getClipById(id) {
+  const db = await openDB()
+  return idbGet(db, 'clips', id)
 }
 
 export async function updateClipLabel(id, label) {
