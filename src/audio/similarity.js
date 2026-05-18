@@ -28,8 +28,9 @@ export function aggregateSimilarity(attemptVector, referenceVectors) {
     .sort((a, b) => b - a)
   const topN = Math.max(1, Math.ceil(scores.length * 0.6))
   const mean = scores.slice(0, topN).reduce((a, b) => a + b, 0) / topN
-  // Map [0, 1] → [0, 100]; negative similarity (clearly wrong sound) → 0
-  return Math.round(Math.max(0, Math.min(100, mean * 100)))
+  // Power curve: mean^1.5 creates real separation between correct (0.85→78)
+  // and wrong sounds (0.65→52, 0.50→35). Linear was too forgiving.
+  return Math.round(Math.max(0, Math.min(100, Math.pow(Math.max(0, mean), 1.5) * 100)))
 }
 
 // ─── Sub-score helpers ──────────────────────────────────────────────────────

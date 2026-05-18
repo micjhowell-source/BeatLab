@@ -2,6 +2,7 @@ import * as db from '../lib/db.js'
 import { createUploadWidget } from '../components/upload.js'
 import { playDemo } from '../audio/synth.js'
 import { loadStaticClips } from '../audio/clip-loader.js'
+import { extractFeatures } from '../audio/analyser.js'
 
 const CATEGORY_ORDER = ['kick', 'hat', 'snare', 'bass', 'fx']
 const CATEGORY_LABEL = { kick: 'Kick', hat: 'Hi-Hat', snare: 'Snare', bass: 'Bass', fx: 'FX' }
@@ -21,6 +22,7 @@ export async function render() {
             ⬆ Import clips
             <input type="file" id="input-import" accept=".json" hidden>
           </label>
+          <button class="secondary" id="btn-reprocess">↺ Reprocess features</button>
           <span class="admin-backup-hint text-muted">Back up your clips so you can restore them after switching devices or URLs.</span>
         </div>
       </div>
@@ -34,6 +36,7 @@ export async function render() {
   await loadStaticClips()
 
   main.querySelector('#btn-export').addEventListener('click', exportClips)
+  main.querySelector('#btn-reprocess').addEventListener('click', () => reprocessFeatures(main))
   main.querySelector('#input-import').addEventListener('change', e => {
     if (e.target.files[0]) importClips(e.target.files[0], main)
     e.target.value = ''
@@ -209,6 +212,35 @@ function renderClipsList(container, clips, soundId) {
 }
 
 // ─── Export / Import ──────────────────────────────────────────────────────────
+
+async function reprocessFeatures(main) {
+  const btn = main.querySelector('#btn-reprocess')
+  btn.disabled    = true
+  btn.textContent = 'Reprocessing…'
+
+  const clips = await db.getAllClips()
+  const withAudio = clips.filter(c => c.audio_data)
+  let done = 0
+
+  for (const clip of withAudio) {
+    try {
+      const ac          = new AudioContext()
+      const audioBuffer = await ac.decodeAudioData(clip.audio_data.slice(0))
+      await ac.close()
+      const vec = await extractFeatures(audioBuffer)
+      await db.updateClipFeatures(clip.id, Array.from(vec))
+      done++
+    } catch (err) {
+      console.warn(`Reprocess failed for ${clip.id}:`, err.message)
+    }
+    btn.textContent = `Reprocessing… ${done}/${withAudio.length}`
+  }
+
+  btn.disabled    = false
+  btn.textContent = '↺ Reprocess features'
+  alert(`Reprocessed ${done} of ${withAudio.length} clips.`)
+  await render()
+}
 
 async function exportClips() {
   const clips = await db.getAllClips()

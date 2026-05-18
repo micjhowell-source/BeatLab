@@ -44,12 +44,18 @@ function averageFrameFeatures(frameVectors) {
   const valid = frameVectors.filter(Boolean)
   if (valid.length === 0) return new Float32Array(VECTOR_LENGTH)
 
-  const sum = new Float32Array(VECTOR_LENGTH)
-  for (const v of valid) {
-    for (let i = 0; i < VECTOR_LENGTH; i++) sum[i] += v[i]
+  // Weight each frame by its RMS (index 16) so loud attack frames dominate.
+  // This is critical for percussive sounds: a kick drum's quiet tail would
+  // otherwise dilute the sharp attack that defines the sound.
+  const weights    = valid.map(v => Math.max(v[16], 1e-6))
+  const totalWeight = weights.reduce((a, b) => a + b, 0)
+
+  const out = new Float32Array(VECTOR_LENGTH)
+  for (let i = 0; i < valid.length; i++) {
+    const w = weights[i] / totalWeight
+    for (let j = 0; j < VECTOR_LENGTH; j++) out[j] += valid[i][j] * w
   }
-  for (let i = 0; i < VECTOR_LENGTH; i++) sum[i] /= valid.length
-  return sum
+  return out
 }
 
 function zScoreNormalise(vec) {

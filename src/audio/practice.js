@@ -74,7 +74,7 @@ export async function scoreHits(audioBuffer, hits, steps, referenceMap) {
       const topN = Math.max(1, Math.ceil(similarities.length * 0.6))
       const sorted = [...similarities].sort((a, b) => b - a)
       const mean = sorted.slice(0, topN).reduce((a, b) => a + b, 0) / topN
-      soundScore = Math.round(Math.max(0, Math.min(100, mean * 100)))
+      soundScore = Math.round(Math.max(0, Math.min(100, Math.pow(Math.max(0, mean), 1.5) * 100)))
     } catch {
       soundScore = 0
     }

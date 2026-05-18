@@ -170,6 +170,13 @@ export async function updateClipLabel(id, label) {
   await idbPut(db, 'clips', { ...clip, label })
 }
 
+export async function updateClipFeatures(id, featureVector) {
+  const db   = await openDB()
+  const clip = await idbGet(db, 'clips', id)
+  if (!clip) return
+  await idbPut(db, 'clips', { ...clip, feature_vector: featureVector })
+}
+
 export async function deleteClip(id) {
   const db = await openDB()
   await idbDelete(db, 'clips', id)
