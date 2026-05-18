@@ -14,12 +14,26 @@ export async function render() {
       <div class="page-header">
         <h1>Admin</h1>
         <p class="page-subtitle">Manage reference clips for each sound. Aim for 3–8 clips per sound.</p>
+        <div class="admin-backup-bar">
+          <button class="secondary" id="btn-export">⬇ Export all clips</button>
+          <label class="secondary admin-import-label">
+            ⬆ Import clips
+            <input type="file" id="input-import" accept=".json" hidden>
+          </label>
+          <span class="admin-backup-hint text-muted">Back up your clips so you can restore them after switching devices or URLs.</span>
+        </div>
       </div>
       <div id="admin-sounds-list" class="admin-sounds-list">
         <div class="loading-spinner">Loading sounds…</div>
       </div>
     </div>
   `
+
+  main.querySelector('#btn-export').addEventListener('click', exportClips)
+  main.querySelector('#input-import').addEventListener('change', e => {
+    if (e.target.files[0]) importClips(e.target.files[0], main)
+    e.target.value = ''
+  })
 
   const [sounds, allClips] = await Promise.all([
     db.getSounds(),
@@ -190,6 +204,67 @@ function renderClipsList(container, clips, soundId) {
   }
 }
 
+// ─── Export / Import ──────────────────────────────────────────────────────────
+
+async function exportClips() {
+  const clips = await db.getAllClips()
+  if (clips.length === 0) {
+    alert('No clips to export.')
+    return
+  }
+
+  // Encode audio_data ArrayBuffer as base64 for JSON portability
+  const payload = {
+    version:     1,
+    exported_at: new Date().toISOString(),
+    clips: clips.map(c => ({
+      ...c,
+      audio_data: c.audio_data ? arrayBufferToBase64(c.audio_data) : null,
+    })),
+  }
+
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `beatlab-clips-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function importClips(file, main) {
+  let payload
+  try {
+    payload = JSON.parse(await file.text())
+  } catch {
+    alert('Could not read file — make sure it is a BeatLab export.')
+    return
+  }
+
+  if (!payload?.clips?.length) {
+    alert('No clips found in this file.')
+    return
+  }
+
+  const existing = await db.getAllClips()
+  const existingIds = new Set(existing.map(c => c.id))
+  let imported = 0
+
+  for (const clip of payload.clips) {
+    if (existingIds.has(clip.id)) continue  // skip duplicates
+    await db.insertClip({
+      ...clip,
+      // Restore ArrayBuffer from base64
+      audio_data: clip.audio_data ? base64ToArrayBuffer(clip.audio_data) : null,
+    })
+    imported++
+  }
+
+  alert(`Imported ${imported} clip${imported !== 1 ? 's' : ''} (${payload.clips.length - imported} already existed).`)
+  // Re-render to show new clips
+  await render()
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function clipHealth(count) {
@@ -197,4 +272,18 @@ function clipHealth(count) {
   if (count < 3)    return { class: 'orange' }
   if (count <= 8)   return { class: 'green' }
   return                   { class: 'accent' }
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer)
+  let binary  = ''
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
+}
+
+function base64ToArrayBuffer(base64) {
+  const binary = atob(base64)
+  const bytes  = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes.buffer
 }
