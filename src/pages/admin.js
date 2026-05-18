@@ -138,8 +138,6 @@ function renderClipsList(container, clips, soundId) {
     return
   }
 
-  const clipMap = new Map(clips.map(c => [c.id, c]))
-
   for (const clip of [...clips].reverse()) {
     const row = document.createElement('div')
     row.className = 'admin-clip-row'
@@ -153,52 +151,43 @@ function renderClipsList(container, clips, soundId) {
         </span>
       </div>
       <div class="admin-clip-actions">
-        <button class="secondary btn-play-clip" data-clip-id="${clip.id}">▶ Play</button>
-        <button class="secondary btn-rename-clip" data-clip-id="${clip.id}">Rename</button>
-        <button class="danger btn-delete-clip" data-clip-id="${clip.id}">Delete</button>
+        <button class="secondary btn-play-clip">▶ Play</button>
+        <button class="secondary btn-rename-clip">Rename</button>
+        <button class="danger btn-delete-clip">Delete</button>
       </div>
     `
-    container.appendChild(row)
-  }
 
-  container.addEventListener('click', async (e) => {
-    const playBtn = e.target.closest('.btn-play-clip')
-    if (playBtn) {
-      const clip = clipMap.get(playBtn.dataset.clipId)
-      if (!clip?.audio_data) return
-      const blob = new Blob([clip.audio_data])
-      const url  = URL.createObjectURL(blob)
+    row.querySelector('.btn-play-clip').addEventListener('click', () => {
+      if (!clip.audio_data) return
+      const blob  = new Blob([clip.audio_data])
+      const url   = URL.createObjectURL(blob)
       const audio = new Audio(url)
       audio.play().catch(() => {})
       audio.addEventListener('ended', () => URL.revokeObjectURL(url))
-      return
-    }
+    })
 
-    const renameBtn = e.target.closest('.btn-rename-clip')
-    if (renameBtn) {
-      const clipId   = renameBtn.dataset.clipId
-      const clip     = clipMap.get(clipId)
-      const labelEl  = container.querySelector(`.admin-clip-label[data-clip-id="${clipId}"]`)
+    row.querySelector('.btn-rename-clip').addEventListener('click', async () => {
+      const labelEl  = row.querySelector('.admin-clip-label')
       const newLabel = prompt('Rename clip:', clip.label || '')
       if (newLabel === null || newLabel.trim() === '') return
-      clip.label   = newLabel.trim()
+      clip.label = newLabel.trim()
       labelEl.textContent = clip.label
-      await db.updateClipLabel(clipId, clip.label)
-      return
-    }
+      await db.updateClipLabel(clip.id, clip.label)
+    })
 
-    const delBtn = e.target.closest('.btn-delete-clip')
-    if (delBtn) {
+    row.querySelector('.btn-delete-clip').addEventListener('click', async (e) => {
+      const btn = e.currentTarget
       if (!confirm('Delete this reference clip? This cannot be undone.')) return
-      const clipId = delBtn.dataset.clipId
-      delBtn.disabled    = true
-      delBtn.textContent = 'Deleting…'
-      await db.deleteClip(clipId)
-      const idx = clips.findIndex(c => c.id === clipId)
+      btn.disabled    = true
+      btn.textContent = 'Deleting…'
+      await db.deleteClip(clip.id)
+      const idx = clips.findIndex(c => c.id === clip.id)
       if (idx !== -1) clips.splice(idx, 1)
       renderClipsList(container, clips, soundId)
-    }
-  })
+    })
+
+    container.appendChild(row)
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

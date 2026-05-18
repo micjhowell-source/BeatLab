@@ -28,8 +28,8 @@ export function aggregateSimilarity(attemptVector, referenceVectors) {
     .sort((a, b) => b - a)
   const topN = Math.max(1, Math.ceil(scores.length * 0.6))
   const mean = scores.slice(0, topN).reduce((a, b) => a + b, 0) / topN
-  // Map [-1, 1] → [0, 100]
-  return Math.round(Math.max(0, Math.min(100, ((mean + 1) / 2) * 100)))
+  // Map [0, 1] → [0, 100]; negative similarity (clearly wrong sound) → 0
+  return Math.round(Math.max(0, Math.min(100, mean * 100)))
 }
 
 // ─── Sub-score helpers ──────────────────────────────────────────────────────
